@@ -2,7 +2,6 @@ use chrono::Local;
 use iced::{time, Element, Subscription};
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
-use std::sync::mpsc::Receiver;
 
 use crate::gui::time_entry::{daily_totals_for_week, project_totals_for_day, project_totals_for_month, project_totals_for_year, ProjectTimeEntries};
 use crate::gui::db::TimeEntry;
@@ -46,7 +45,7 @@ impl std::fmt::Display for ReportRange {
 
 #[derive(Debug, Clone)]
 pub enum Message {
-    TrayPoll,
+    Tray(TrayEvent),
     WindowCloseRequested,
     ScreenSelected(Screen),
     ReportRangeSelected(ReportRange),
@@ -66,17 +65,16 @@ pub struct ProjectTimer {
     pub(crate) screen: Screen,
     pub(crate) report_range: ReportRange,
     pub(crate) entries: ProjectTimeEntries,
-    tray_events: Receiver<TrayEvent>,
 }
 
 impl Default for ProjectTimer {
     fn default() -> Self {
-        Self::new(std::sync::mpsc::channel().1)
+        Self::new()
     }
 }
 
 impl ProjectTimer {
-    pub(crate) fn new(tray_events: Receiver<TrayEvent>) -> Self {
+    pub(crate) fn new() -> Self {
         let entries = Database::get_time_entries().unwrap_or_default();
         let entries_hashmap: ProjectTimeEntries = entries.into_iter().fold(HashMap::new(), |mut acc, entry| {
             acc.entry(entry.project.clone()).or_default().push(entry);
@@ -90,17 +88,12 @@ impl ProjectTimer {
             screen: Screen::Today,
             report_range: ReportRange::Week,
             entries: entries_hashmap,
-            tray_events,
         }
     }
 
-    pub(crate) fn try_tray_event(&self) -> Option<TrayEvent> {
-        self.tray_events.try_recv().ok()
-    }
     pub fn update(&mut self, message: Message) {
         match message {
-            Message::TrayPoll => {}
-            Message::WindowCloseRequested => {}
+            Message::WindowCloseRequested | Message::Tray(_) => {}
             Message::ScreenSelected(screen) => self.screen = screen,
             Message::ReportRangeSelected(range) => self.report_range = range,
             Message::ProjectNameChanged(name) => self.project_name = name,
@@ -136,10 +129,9 @@ impl ProjectTimer {
             State::Idle => Subscription::none(),
             State::Ticking { .. } => time::every(Duration::from_secs(1)).map(Message::Tick),
         };
-        let tray = time::every(Duration::from_millis(100)).map(|_| Message::TrayPoll);
         let close_requests = iced::window::close_requests()
             .map(|_| Message::WindowCloseRequested);
-        Subscription::batch([timer, tray, close_requests])
+        Subscription::batch([timer, close_requests])
     }
 
     pub fn view(&self) -> Element<'_, Message> {
