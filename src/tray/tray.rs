@@ -1,6 +1,9 @@
 use anyhow::Result;
-use std::sync::mpsc::{channel, Sender};
+use std::sync::mpsc::{channel, Receiver, Sender};
 use std::thread::{self, JoinHandle};
+
+pub const OPEN_MENU_ID: &str = "open-time-manager";
+pub const CLOSE_MENU_ID: &str = "close-time-manager";
 
 pub struct TrayHandle {
     shutdown: Sender<()>,
@@ -8,80 +11,114 @@ pub struct TrayHandle {
 }
 
 impl TrayHandle {
-    // Request the tray thread to shutdown and wait for it to exit.
     pub fn shutdown(self) {
         let _ = self.shutdown.send(());
         let _ = self.join_handle.join();
     }
 }
 
-pub struct GtkTray;
+pub struct Tray;
 
-impl GtkTray {
+impl Tray {
     pub fn init() -> Result<TrayHandle> {
-        let (tx, rx) = channel::<()>();
+        #[cfg(target_os = "linux")]
+        {
+            return linux::init();
+        }
 
-        let join_handle = thread::spawn(move || {
-            // Initialize GTK on this thread and create the tray icon here.
-            if let Err(e) = gtk::init() {
-                eprintln!("Failed to initialize GTK: {:?}", e);
+        #[cfg(any(target_os = "windows", target_os = "macos"))]
+        {
+            return desktop::init();
+        }
+
+        #[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "macos")))]
+        {
+            Err(anyhow::anyhow!("Tray is not supported on this operating system"))
+        }
+    }
+}
+
+fn create_tray_icon() -> Result<tray_icon::TrayIcon> {
+    let icon_bytes = include_bytes!("icon.ico");
+    let image = image::load_from_memory(icon_bytes)?.into_rgba8();
+    let (width, height) = image.dimensions();
+    let icon = tray_icon::Icon::from_rgba(image.into_raw(), width, height)?;
+
+    let open_item = tray_icon::menu::MenuItem::with_id(
+        OPEN_MENU_ID,
+        "Open Time Manager",
+        true,
+        None,
+    );
+    let close_item = tray_icon::menu::MenuItem::with_id(
+        CLOSE_MENU_ID,
+        "Close Time Manager",
+        true,
+        None,
+    );
+    let menu = tray_icon::menu::Menu::with_items(&[&open_item, &close_item])?;
+
+    Ok(tray_icon::TrayIconBuilder::new()
+        .with_menu(Box::new(menu))
+        .with_tooltip("Time Manager")
+        .with_icon(icon)
+        .build()?)
+}
+
+#[cfg(target_os = "linux")]
+mod linux {
+    use super::*;
+
+    pub(super) fn init() -> Result<TrayHandle> {
+        let (shutdown_tx, shutdown_rx) = channel::<()>();
+        let join_handle = thread::spawn(move || run(shutdown_rx));
+        Ok(TrayHandle { shutdown: shutdown_tx, join_handle })
+    }
+
+    fn run(shutdown_rx: Receiver<()>) {
+        if let Err(error) = gtk::init() {
+            eprintln!("Failed to initialize GTK: {error:?}");
+            return;
+        }
+
+        let tray_icon = match create_tray_icon() {
+            Ok(icon) => icon,
+            Err(error) => {
+                eprintln!("Failed to create tray icon: {error}");
                 return;
             }
+        };
 
-            // Load icon bytes (path relative to this file: src/tray/icon.ico)
-            let icon_bytes = include_bytes!("icon.ico");
-            let image = match image::load_from_memory(icon_bytes) {
-                Ok(img) => img.into_rgba8(),
-                Err(err) => {
-                    eprintln!("Failed to load icon: {}", err);
-                    return;
-                }
-            };
-
-            let (width, height) = image.dimensions();
-            let rgba_raw = image.into_raw();
-
-            let icon = match tray_icon::Icon::from_rgba(rgba_raw, width, height) {
-                Ok(i) => i,
-                Err(err) => {
-                    eprintln!("Failed to create tray icon: {}", err);
-                    return;
-                }
-            };
-
-            // Build a simple empty menu (adding items is backend-dependent)
-            let tray_menu = tray_icon::menu::Menu::new();
-
-            let tray_icon = match tray_icon::TrayIconBuilder::new()
-                .with_menu(Box::new(tray_menu))
-                .with_tooltip("Time Manager")
-                .with_icon(icon)
-                .build()
-            {
-                Ok(t) => t,
-                Err(err) => {
-                    eprintln!("Failed to build tray icon: {}", err);
-                    return;
-                }
-            };
-
-            // Listen for a shutdown request on a background thread so we can call
-            // gtk::main_quit() from this GTK thread when requested.
-            let shutdown_rx = rx;
-            let _tray_icon = tray_icon; // keep alive
-
-            // Spawn a helper thread to wait for shutdown and quit the GTK main loop.
-            let _waiter = std::thread::spawn(move || {
-                // Block until sender sends
-                let _ = shutdown_rx.recv();
-                // Request GTK main loop to quit
-                gtk::main_quit();
-            });
-
-            // Run GTK main loop on this thread (blocks until gtk::main_quit())
-            gtk::main();
+        let _tray_icon = tray_icon;
+        thread::spawn(move || {
+            let _ = shutdown_rx.recv();
+            gtk::glib::MainContext::default().invoke(gtk::main_quit);
         });
 
-        Ok(TrayHandle { shutdown: tx, join_handle })
+        gtk::main();
+    }
+}
+
+#[cfg(any(target_os = "windows", target_os = "macos"))]
+mod desktop {
+    use super::*;
+
+    pub(super) fn init() -> Result<TrayHandle> {
+        let (shutdown_tx, shutdown_rx) = channel::<()>();
+        let join_handle = thread::spawn(move || run(shutdown_rx));
+        Ok(TrayHandle { shutdown: shutdown_tx, join_handle })
+    }
+
+    fn run(shutdown_rx: Receiver<()>) {
+        let tray_icon = match create_tray_icon() {
+            Ok(icon) => icon,
+            Err(error) => {
+                eprintln!("Failed to create tray icon: {error}");
+                return;
+            }
+        };
+
+        let _tray_icon = tray_icon;
+        let _ = shutdown_rx.recv();
     }
 }
