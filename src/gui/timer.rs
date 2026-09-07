@@ -1,8 +1,10 @@
 use chrono::Local;
 use iced::{time, Element, Subscription};
 use std::time::{Duration, Instant};
+use std::sync::mpsc::Receiver;
 
 use crate::gui::time_entry::{daily_totals_for_week, project_totals_for_day, project_totals_for_month, project_totals_for_year, ProjectTimeEntries, TimeEntry};
+use crate::tray::tray::TrayEvent;
 
 #[derive(Debug, Clone, Copy)]
 pub enum State {
@@ -42,6 +44,7 @@ impl std::fmt::Display for ReportRange {
 #[derive(Debug, Clone)]
 pub enum Message {
     TrayPoll,
+    WindowCloseRequested,
     ScreenSelected(Screen),
     ReportRangeSelected(ReportRange),
     ProjectNameChanged(String),
@@ -60,10 +63,17 @@ pub struct ProjectTimer {
     pub(crate) screen: Screen,
     pub(crate) report_range: ReportRange,
     pub(crate) entries: ProjectTimeEntries,
+    tray_events: Receiver<TrayEvent>,
 }
 
 impl Default for ProjectTimer {
     fn default() -> Self {
+        Self::new(std::sync::mpsc::channel().1)
+    }
+}
+
+impl ProjectTimer {
+    pub(crate) fn new(tray_events: Receiver<TrayEvent>) -> Self {
         Self {
             duration: Duration::ZERO,
             state: State::Idle,
@@ -71,14 +81,17 @@ impl Default for ProjectTimer {
             screen: Screen::Today,
             report_range: ReportRange::Week,
             entries: ProjectTimeEntries::new(),
+            tray_events,
         }
     }
-}
 
-impl ProjectTimer {
+    pub(crate) fn try_tray_event(&self) -> Option<TrayEvent> {
+        self.tray_events.try_recv().ok()
+    }
     pub fn update(&mut self, message: Message) {
         match message {
             Message::TrayPoll => {}
+            Message::WindowCloseRequested => {}
             Message::ScreenSelected(screen) => self.screen = screen,
             Message::ReportRangeSelected(range) => self.report_range = range,
             Message::ProjectNameChanged(name) => self.project_name = name,
@@ -115,7 +128,9 @@ impl ProjectTimer {
             State::Ticking { .. } => time::every(Duration::from_secs(1)).map(Message::Tick),
         };
         let tray = time::every(Duration::from_millis(100)).map(|_| Message::TrayPoll);
-        Subscription::batch([timer, tray])
+        let close_requests = iced::window::close_requests()
+            .map(|_| Message::WindowCloseRequested);
+        Subscription::batch([timer, tray, close_requests])
     }
 
     pub fn view(&self) -> Element<'_, Message> {
