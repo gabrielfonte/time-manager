@@ -1,10 +1,9 @@
-
 use anyhow::Result;
-use std::sync::mpsc::Receiver;
-use std::sync::{Arc, Mutex};
+use async_channel::Receiver;
+
 use super::timer::{Message, ProjectTimer};
-use crate::tray::tray::TrayEvent;
 use crate::gui::db::Database;
+use crate::tray::tray::TrayEvent;
 
 pub trait Gui {
     fn init(tray_events: Receiver<TrayEvent>) -> Result<()>;
@@ -14,22 +13,25 @@ pub struct IcedGui;
 
 impl Gui for IcedGui {
     fn init(tray_events: Receiver<TrayEvent>) -> Result<()> {
-        // Initialize the database
         Database::init()?;
-        // Initialize the GUI with the tray event receiver
-        let tray_events = Arc::new(Mutex::new(Some(tray_events)));
+
         iced::application(
-            move || ProjectTimer::new(tray_events.lock().unwrap().take().unwrap()),
+            move || {
+                (
+                    ProjectTimer::new(),
+                    iced::Task::run(tray_events.clone(), Message::Tray),
+                )
+            },
             update,
             ProjectTimer::view,
-            )
-            .window(iced::window::Settings {
-                icon: Some(window_icon()?),
-                ..Default::default()
-            })
-            .exit_on_close_request(false)
-            .subscription(ProjectTimer::subscription)
-            .run()?;
+        )
+        .window(iced::window::Settings {
+            icon: Some(window_icon()?),
+            ..Default::default()
+        })
+        .exit_on_close_request(false)
+        .subscription(ProjectTimer::subscription)
+        .run()?;
 
         Ok(())
     }
@@ -37,7 +39,9 @@ impl Gui for IcedGui {
 
 fn window_icon() -> Result<iced::window::Icon> {
     let icon_bytes = include_bytes!("../tray/icon.ico");
-    let image = image::load_from_memory(icon_bytes)?.into_rgba8();
+    let image =
+        image::load_from_memory(icon_bytes)?.into_rgba8();
+
     let (width, height) = image.dimensions();
 
     Ok(iced::window::icon::from_rgba(
@@ -47,17 +51,24 @@ fn window_icon() -> Result<iced::window::Icon> {
     )?)
 }
 
-fn update(timer: &mut ProjectTimer, message: Message) -> iced::Task<Message> {
+fn update(
+    timer: &mut ProjectTimer,
+    message: Message,
+) -> iced::Task<Message> {
     match message {
-        Message::WindowCloseRequested => iced::window::oldest().then(|window_id| {
-            window_id.map_or_else(iced::Task::none, |id| {
-                iced::window::minimize(id, true)
+        Message::WindowCloseRequested => {
+            iced::window::oldest().then(|window_id| {
+                window_id.map_or_else(
+                    iced::Task::none,
+                    |id| iced::window::minimize(id, true),
+                )
             })
-        }),
-        Message::TrayPoll => match timer.try_tray_event() {
-            Some(TrayEvent::Close) => iced::exit(),
-            None => iced::Task::none(),
-        },
+        }
+
+        Message::Tray(TrayEvent::Close) => {
+            iced::exit()
+        }
+
         message => {
             timer.update(message);
             iced::Task::none()
