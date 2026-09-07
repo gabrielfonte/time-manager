@@ -31,7 +31,7 @@ pub(crate) fn view(timer: &ProjectTimer) -> Element<'_, Message> {
 fn sidebar(screen: Screen) -> Element<'static, Message> {
     let today = nav_button("Today", screen == Screen::Today, Message::ScreenSelected(Screen::Today));
     let reports = nav_button("Reports", screen == Screen::Reports, Message::ScreenSelected(Screen::Reports));
-    let brand = column![text("TIME").size(14).color(TEAL), text("keeper").size(27).color(INK)].spacing(0);
+    let brand = column![text("TIME").size(14).color(TEAL), text("Manager").size(27).color(INK)].spacing(0);
 
     container(column![brand, rule::horizontal(1), today, reports].spacing(16).padding(28))
         .width(220)

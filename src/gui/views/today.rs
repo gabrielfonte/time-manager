@@ -1,8 +1,19 @@
+use chrono::Timelike;
 use iced::widget::{button, column, container, pick_list, row, rule, scrollable, text};
 use iced::{Alignment, Background, Color, Element};
 
 use super::{active, format_duration, format_seconds, metric_card, panel_style, CORAL, INK, MUTED, TEAL};
 use crate::gui::timer::{Message, ProjectTimer};
+
+fn get_greeting() -> &'static str {
+    let hour = chrono::Local::now().hour();
+    match hour {
+        5..=11 => "morning",
+        12..=17 => "afternoon",
+        18..=19 => "evening",
+        _ => "night",
+    }
+}
 
 pub(crate) fn view(timer: &ProjectTimer) -> Element<'_, Message> {
     let project_options = timer.project_names();
@@ -37,7 +48,7 @@ pub(crate) fn view(timer: &ProjectTimer) -> Element<'_, Message> {
         .style(|_| panel_style());
 
     let header = column![
-        text("Good morning.").size(34).color(INK),
+        text(format!("Good {}!", get_greeting())).size(34).color(INK),
         text("Make the next block of time count.").size(16).color(MUTED),
     ].spacing(6);
 
@@ -55,7 +66,7 @@ pub(crate) fn view(timer: &ProjectTimer) -> Element<'_, Message> {
 
 pub(crate) fn project_overview(timer: &ProjectTimer) -> Element<'_, Message> {
     let projects = timer.today_projects();
-    
+
     let rows: Vec<Element<'static, Message>> = projects.into_iter().enumerate().map(|(index, (name, seconds))| {
         let percentage = (seconds as f32 / 28_800.0).min(1.0);
         let color = [TEAL, Color::from_rgb(0.95, 0.61, 0.22), Color::from_rgb(0.32, 0.46, 0.72)][index % 3];
