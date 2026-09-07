@@ -5,9 +5,14 @@ use crate::gui::gui::{Gui, IcedGui};
 use anyhow::Result;
 
 fn main() -> Result<()> {
-    let tray_handle = Tray::init()?;
+    // Initialize the system tray
+    let system_tray_handle = Tray::init()?;
     println!("Tray initialized. Starting GUI.");
+
+    // Initialize the GUI
     IcedGui::init()?;
-    tray_handle.shutdown();
+
+    // Clean up the system tray when the GUI exits
+    system_tray_handle.shutdown();
     Ok(())
 }
