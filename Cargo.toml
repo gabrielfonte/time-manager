@@ -10,6 +10,7 @@ tray-icon = "0.24.2"
 winit = "0.30.13"
 anyhow = "1.0"
 chrono = "0.4"
+rusqlite = { version = "0.40.2", features = ["bundled"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 gtk = "0.18"

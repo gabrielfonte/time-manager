@@ -4,6 +4,7 @@ use std::sync::mpsc::Receiver;
 use std::sync::{Arc, Mutex};
 use super::timer::{Message, ProjectTimer};
 use crate::tray::tray::TrayEvent;
+use crate::gui::db::Database;
 
 pub trait Gui {
     fn init(tray_events: Receiver<TrayEvent>) -> Result<()>;
@@ -13,6 +14,9 @@ pub struct IcedGui;
 
 impl Gui for IcedGui {
     fn init(tray_events: Receiver<TrayEvent>) -> Result<()> {
+        // Initialize the database
+        Database::init()?;
+        // Initialize the GUI with the tray event receiver
         let tray_events = Arc::new(Mutex::new(Some(tray_events)));
         iced::application(
             move || ProjectTimer::new(tray_events.lock().unwrap().take().unwrap()),

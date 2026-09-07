@@ -1,9 +1,12 @@
 use chrono::Local;
 use iced::{time, Element, Subscription};
+use std::collections::HashMap;
 use std::time::{Duration, Instant};
 use std::sync::mpsc::Receiver;
 
-use crate::gui::time_entry::{daily_totals_for_week, project_totals_for_day, project_totals_for_month, project_totals_for_year, ProjectTimeEntries, TimeEntry};
+use crate::gui::time_entry::{daily_totals_for_week, project_totals_for_day, project_totals_for_month, project_totals_for_year, ProjectTimeEntries};
+use crate::gui::db::TimeEntry;
+use crate::gui::db::Database;
 use crate::tray::tray::TrayEvent;
 
 #[derive(Debug, Clone, Copy)]
@@ -74,13 +77,19 @@ impl Default for ProjectTimer {
 
 impl ProjectTimer {
     pub(crate) fn new(tray_events: Receiver<TrayEvent>) -> Self {
+        let entries = Database::get_time_entries().unwrap_or_default();
+        let entries_hashmap: ProjectTimeEntries = entries.into_iter().fold(HashMap::new(), |mut acc, entry| {
+            acc.entry(entry.project.clone()).or_default().push(entry);
+            acc
+        });
+
         Self {
             duration: Duration::ZERO,
             state: State::Idle,
             project_name: "Focus work".to_string(),
             screen: Screen::Today,
             report_range: ReportRange::Week,
-            entries: ProjectTimeEntries::new(),
+            entries: entries_hashmap,
             tray_events,
         }
     }
@@ -181,10 +190,14 @@ impl ProjectTimer {
             return;
         }
 
+        let date = Local::now();
         let project = self.project_name.trim().to_string();
         self.entries
             .entry(project.clone())
             .or_default()
-            .push(TimeEntry { project, date: Local::now(), seconds });
+            .push(TimeEntry { project: project.clone(), date, seconds });
+
+        // Insert non existing entries into the database
+        let _ = Database::insert_time_entry(&TimeEntry { project, date, seconds });
     }
 }

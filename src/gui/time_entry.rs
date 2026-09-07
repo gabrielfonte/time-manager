@@ -1,12 +1,6 @@
-use chrono::{DateTime, Datelike, Duration, Local, NaiveDate};
+use chrono::{Datelike, Duration, Local, NaiveDate};
 use std::collections::HashMap;
-
-#[derive(Debug, Clone)]
-pub struct TimeEntry {
-    pub project: String,
-    pub date: DateTime<Local>,
-    pub seconds: u32,
-}
+use crate::gui::db::TimeEntry; 
 
 pub type ProjectTimeEntries = HashMap<String, Vec<TimeEntry>>;
 
