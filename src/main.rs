@@ -14,5 +14,5 @@ fn main() -> Result<()> {
     let result = IcedGui::init(tray.events());
     // Clean up the system tray when the GUI exits
     tray.shutdown();
-    Ok(())
+    result
 }
